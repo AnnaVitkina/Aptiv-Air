@@ -19,7 +19,8 @@ from customization_per_carrier import (
     resolve_rate_by,
 )
 from format_rates_layout import format_rates_workbook
-from transform_ratebook import FRONT_COLUMN_ORDER, PROCESSING_DIR, normalize_column_name
+from config import PROCESSING_DIR
+from transform_ratebook import FRONT_COLUMN_ORDER, normalize_column_name
 
 HEADER_ROWS = 6
 BLOCK_ORIGIN = "Origin Charges"
