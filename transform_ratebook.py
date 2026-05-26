@@ -5,12 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from config import PROCESSING_DIR
 from customization_per_carrier import (
     apply_shipment_customization,
     detect_carrier_key,
 )
-
-PROCESSING_DIR = Path(__file__).resolve().parent / "processing"
 
 FRONT_COLUMN_ORDER = [
     "Paying Region",
