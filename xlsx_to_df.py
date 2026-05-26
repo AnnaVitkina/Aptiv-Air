@@ -4,10 +4,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from config import INPUT_DIR
 from export_rates_layout import export_rates_layout_xlsx
 from transform_ratebook import save_processed_xlsx, transform_ratebook_df
-
-INPUT_DIR = Path(__file__).resolve().parent / "input"
 
 
 def list_xlsx_files() -> list[Path]:
