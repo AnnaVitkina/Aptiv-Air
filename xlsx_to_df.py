@@ -2,6 +2,20 @@
 
 from pathlib import Path
 
+import os
+import sys
+
+# When running via exec(open(...).read()) in Colab, __file__ is not defined.
+# Add the project directory to sys.path so sibling modules can be imported.
+_COLAB_PROJECT_DIR = "/content/Aptiv-Air"
+try:
+    _proj_dir = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    _proj_dir = _COLAB_PROJECT_DIR
+if _proj_dir not in sys.path:
+    sys.path.insert(0, _proj_dir)
+
+
 import pandas as pd
 
 from config import INPUT_DIR
