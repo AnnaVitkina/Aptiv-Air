@@ -19,7 +19,7 @@ from customization_per_carrier import (
     resolve_rate_by,
 )
 from format_rates_layout import format_rates_workbook
-from config import PROCESSING_DIR
+from config import OUTPUT_DIR
 from transform_ratebook import FRONT_COLUMN_ORDER, normalize_column_name
 
 HEADER_ROWS = 6
@@ -443,10 +443,10 @@ def export_rates_layout_xlsx(
         standard_display_names=standard_display_names,
     )
 
-    PROCESSING_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     safe_sheet = re.sub(r'[<>:"/\\|?*]', "_", sheet_name)
     output_path = (
-        PROCESSING_DIR / f"{source_path.stem}_{safe_sheet}_rates_layout.xlsx"
+        OUTPUT_DIR / f"{source_path.stem}_{safe_sheet}_rates_layout.xlsx"
     )
     wb.save(output_path)
     return output_path
