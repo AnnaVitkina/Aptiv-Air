@@ -23,6 +23,30 @@ def _kuehne_nagel_carrier_name(series: pd.Series) -> pd.Series:
     return series.astype(str).str.replace(r"\bKN\b", "Kuehne Nagel", regex=True)
 
 
+# Destination country code -> Carrier Name (Dachser only).
+DACHSER_CARRIER_NAME_BY_DESTINATION: dict[str, str] = {
+    "AT": "Dachser AT (PN1)",
+    "ES": "Dachser ES",
+    "HU": "Dachser HU",
+    "MA": "Dachser MA",
+    "PL": "Dachser PL",
+    "PT": "Dachser PT",
+    "TR": "Dachser TR",
+    "DE": "Dachser DE",
+    "CN": "Dachser DE",
+    "KR": "Dachser DE",
+    "MK": "Dachser DE",
+    "TN": "Dachser DE",
+    "US": "Dachser DE",
+}
+
+
+def _dachser_carrier_name(df: pd.DataFrame) -> pd.Series:
+    dest = df["Destination Country"].astype(str).str.strip().str.upper()
+    mapped = dest.map(DACHSER_CARRIER_NAME_BY_DESTINATION)
+    return mapped.fillna(df["Carrier Name"])
+
+
 # Applied to all carriers (renaming + no green highlight).
 COMMON_DISPLAY_NAME_OVERRIDES: list[tuple[str, str]] = [
     ("pre carriage linehaul charge", "Pre-Carriage Linehaul"),
@@ -87,6 +111,12 @@ CARRIER_CUSTOMIZATIONS: list[CarrierCustomization] = [
         prepend_transport_mode=True,
         exclude_shipment_columns=("Incoterm",),
         shipment_values={"Transport Mode": "AIR"},
+    ),
+    CarrierCustomization(
+        carrier_keys=("dachser",),
+        shipment_values={
+            "Carrier Name": lambda df: _dachser_carrier_name(df),
+        },
     ),
 ]
 
