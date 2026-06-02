@@ -23,6 +23,12 @@ def _kuehne_nagel_carrier_name(series: pd.Series) -> pd.Series:
     return series.astype(str).str.replace(r"\bKN\b", "Kuehne Nagel", regex=True)
 
 
+def _kuehne_nagel_carrier_name_from_df(df: pd.DataFrame) -> pd.Series:
+    names = _kuehne_nagel_carrier_name(df["Carrier Name"])
+    dest = df["Destination Country"].astype(str).str.strip().str.upper()
+    return names.mask(dest == "KR", "Kuehne Nagel MA")
+
+
 # Destination country code -> Carrier Name (Dachser only).
 DACHSER_CARRIER_NAME_BY_DESTINATION: dict[str, str] = {
     "AT": "Dachser AT (PN1)",
@@ -99,7 +105,7 @@ CARRIER_CUSTOMIZATIONS: list[CarrierCustomization] = [
         exclude_shipment_columns=("Incoterm",),
         shipment_values={
             "Transport Mode": "AIR",
-            "Carrier Name": lambda df: _kuehne_nagel_carrier_name(df["Carrier Name"]),
+            "Carrier Name": lambda df: _kuehne_nagel_carrier_name_from_df(df),
         },
         extra_display_name_overrides=[("pss", "Peak Season Surcharge")],
         applies_if_by_display_name={
