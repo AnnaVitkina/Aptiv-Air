@@ -187,12 +187,22 @@ def get_standard_display_names(carrier_key: str) -> set[str]:
     return {display for _, display in get_display_name_overrides(carrier_key)}
 
 
+# Substrings matched against normalized column names (excluded from final output).
+GLOBAL_RATE_COLUMN_SUBSTRING_SKIP = ("transit time",)
+
+
 def get_skip_rate_columns(carrier_key: str) -> set[str]:
     base = {"currency", "additional request", "category"}
     customization = get_carrier_customization(carrier_key)
     if customization and customization.skip_rate_columns:
         base = base | {normalize_column_name(c) for c in customization.skip_rate_columns}
     return base
+    
+def is_excluded_rate_column(column: str, carrier_key: str = "default") -> bool:
+    norm = normalize_column_name(column)
+    if any(pattern in norm for pattern in GLOBAL_RATE_COLUMN_SUBSTRING_SKIP):
+        return True
+    return norm in get_skip_rate_columns(carrier_key)
 
 
 def apply_display_name_override(
