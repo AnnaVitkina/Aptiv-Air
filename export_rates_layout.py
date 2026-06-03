@@ -13,7 +13,7 @@ from customization_per_carrier import (
     apply_display_name_override,
     detect_carrier_key,
     get_shipment_columns,
-    get_skip_rate_columns,
+    is_excluded_rate_column,
     get_standard_display_names,
     resolve_applies_if,
     resolve_rate_by,
@@ -208,11 +208,10 @@ def rate_columns_from_df(df: pd.DataFrame, carrier_key: str) -> list[str]:
     shipment_names = {
         normalize_column_name(name) for name in get_shipment_columns(carrier_key)
     }
-    skip_columns = get_skip_rate_columns(carrier_key)
     rate_columns: list[str] = []
     for column in df.columns:
         norm = normalize_column_name(column)
-        if norm in shipment_names or norm in skip_columns:
+        if norm in shipment_names or is_excluded_rate_column(column, carrier_key):
             continue
         rate_columns.append(column)
     return rate_columns
