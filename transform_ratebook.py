@@ -9,6 +9,7 @@ from config import PROCESSING_DIR
 from customization_per_carrier import (
     apply_shipment_customization,
     detect_carrier_key,
+    is_excluded_rate_column,
 )
 
 FRONT_COLUMN_ORDER = [
@@ -92,7 +93,11 @@ def rate_columns_from(df: pd.DataFrame) -> list[str]:
     if start_col is None:
         raise KeyError("No Pre Carriage columns found in DataFrame.")
     start_idx = df.columns.get_loc(start_col)
-    return list(df.columns[start_idx:])
+    return [
+        col
+        for col in df.columns[start_idx:]
+        if not is_excluded_rate_column(col)
+    ]
 
 
 def build_carrier_name(df: pd.DataFrame) -> pd.Series:
