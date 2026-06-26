@@ -35,7 +35,7 @@ WEIGHT_BRACKET_RE = re.compile(
 
 # Block detection from column name tokens (not per-cost mappings).
 ORIGIN_TOKENS = ("pre carriage", "pre-carriage", "origin")
-MAIN_TOKENS = ("main carriage", "pss")
+MAIN_TOKENS = ("main carriage", "pss", "pps")
 DEST_TOKENS = ("on carriage", "destination")
 
 @dataclass
@@ -260,6 +260,24 @@ def group_rate_columns(columns: list[str]) -> list[list[str]]:
     return groups
 
 
+def is_blank_value(value) -> bool:
+    """True for missing/empty cells (0 is not treated as blank)."""
+    if value is None or pd.isna(value):
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    return False
+
+
+def cost_row_has_rate_value(df: pd.DataFrame, cost: RateCost, row_idx) -> bool:
+    for sub in cost.sub_columns:
+        if sub.is_currency or not sub.source_column:
+            continue
+        if not is_blank_value(df.at[row_idx, sub.source_column]):
+            return True
+    return False
+
+
 def is_zero_value(value) -> bool:
     if value is None or pd.isna(value):
         return True
@@ -295,6 +313,11 @@ def remove_all_zero_cost_groups(costs: list[RateCost], df: pd.DataFrame) -> list
 
 
 def build_rate_cost_groups(df: pd.DataFrame, carrier_key: str) -> list[RateCost]:
+    if normalize_column_name(carrier_key) == "dachser":
+        from dachser_customization import build_dachser_rate_cost_groups
+
+        return build_dachser_rate_cost_groups(df, carrier_key)
+
     columns = rate_columns_from_df(df, carrier_key)
     by_block: dict[str, list[RateCost]] = {block: [] for block in BLOCK_ORDER}
 
@@ -327,7 +350,7 @@ def build_rate_cost_groups(df: pd.DataFrame, carrier_key: str) -> list[RateCost]
     ordered: list[RateCost] = []
     for block in BLOCK_ORDER:
         ordered.extend(by_block[block])
-    return remove_all_zero_cost_groups(ordered, df)
+    return ordered
 
 
 def get_currency_series(df: pd.DataFrame) -> pd.Series:
@@ -351,6 +374,13 @@ def write_merged_row(
             end_column=end_col,
         )
     ws.cell(row=row_idx, column=start_col, value=value)
+
+
+def excel_cell_value(value):
+    """Convert pandas missing values to None for openpyxl."""
+    if value is None or pd.isna(value):
+        return None
+    return value
 
 
 def export_rates_layout_xlsx(
@@ -412,16 +442,21 @@ def export_rates_layout_xlsx(
     for row_offset, row_idx in enumerate(df.index):
         excel_row = data_start_row + row_offset
         for col_idx, column in enumerate(shipment_columns, start=1):
-            ws.cell(row=excel_row, column=col_idx, value=df.at[row_idx, column])
+            ws.cell(
+                row=excel_row,
+                column=col_idx,
+                value=excel_cell_value(df.at[row_idx, column]),
+            )
 
         for cost, start_col, _end_col in cost_spans:
             col_pos = start_col
+            has_rate_value = cost_row_has_rate_value(df, cost, row_idx)
             for sub in cost.sub_columns:
                 if sub.is_currency:
-                    value = currency.at[row_idx]
+                    value = currency.at[row_idx] if has_rate_value else None
                 else:
                     value = df.at[row_idx, sub.source_column]
-                ws.cell(row=excel_row, column=col_pos, value=value)
+                ws.cell(row=excel_row, column=col_pos, value=excel_cell_value(value))
                 col_pos += 1
 
     format_spans = [
@@ -430,6 +465,7 @@ def export_rates_layout_xlsx(
             start_col,
             end_col,
             [(sub.header, sub.min_max_label) for sub in cost.sub_columns],
+            not cost_has_nonzero_values(df, cost),
         )
         for cost, start_col, end_col in cost_spans
     ]
@@ -440,6 +476,15 @@ def export_rates_layout_xlsx(
         data_start_row=data_start_row,
         data_row_count=len(df),
         standard_display_names=standard_display_names,
+        highlight_empty_carrier_name=(
+            normalize_column_name(carrier_key) == "dachser"
+            and "Carrier Name" in shipment_columns
+        ),
+        carrier_name_col=(
+            shipment_columns.index("Carrier Name") + 1
+            if "Carrier Name" in shipment_columns
+            else None
+        ),
     )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
