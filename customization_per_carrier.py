@@ -29,30 +29,6 @@ def _kuehne_nagel_carrier_name_from_df(df: pd.DataFrame) -> pd.Series:
     return names.mask(dest == "KR", "Kuehne Nagel MA")
 
 
-# Destination country code -> Carrier Name (Dachser only).
-DACHSER_CARRIER_NAME_BY_DESTINATION: dict[str, str] = {
-    "AT": "Dachser AT (PN1)",
-    "ES": "Dachser ES",
-    "HU": "Dachser HU",
-    "MA": "Dachser MA",
-    "PL": "Dachser PL",
-    "PT": "Dachser PT",
-    "TR": "Dachser TR",
-    "DE": "Dachser DE",
-    "CN": "Dachser DE",
-    "KR": "Dachser DE",
-    "MK": "Dachser DE",
-    "TN": "Dachser DE",
-    "US": "Dachser DE",
-}
-
-
-def _dachser_carrier_name(df: pd.DataFrame) -> pd.Series:
-    dest = df["Destination Country"].astype(str).str.strip().str.upper()
-    mapped = dest.map(DACHSER_CARRIER_NAME_BY_DESTINATION)
-    return mapped.fillna(df["Carrier Name"])
-
-
 # Applied to all carriers (renaming + no green highlight).
 COMMON_DISPLAY_NAME_OVERRIDES: list[tuple[str, str]] = [
     ("pre carriage linehaul charge", "Pre-Carriage Linehaul"),
@@ -67,6 +43,8 @@ COMMON_DISPLAY_NAME_OVERRIDES: list[tuple[str, str]] = [
     ("pre carriage thc", "THC origin"),
     ("main carriage non stackable fee", "Non-stackable shipment"),
     ("main carriage rate", "Transport cost"),
+    ("pss", "Peak Season Surcharge"),
+    ("pps", "Peak Season Surcharge"),
     ("on carriage thc", "THC destination"),
     (
         "on carriage handling charge",
@@ -120,9 +98,6 @@ CARRIER_CUSTOMIZATIONS: list[CarrierCustomization] = [
     ),
     CarrierCustomization(
         carrier_keys=("dachser",),
-        shipment_values={
-            "Carrier Name": lambda df: _dachser_carrier_name(df),
-        },
     ),
 ]
 
@@ -162,13 +137,18 @@ def _excluded_shipment_column_names(carrier_key: str) -> set[str]:
 
 
 def get_shipment_columns(carrier_key: str) -> list[str]:
-    customization = get_carrier_customization(carrier_key)
-    if customization and customization.shipment_columns:
-        columns = list(customization.shipment_columns)
-    elif customization and customization.prepend_transport_mode:
-        columns = ["Transport Mode", *_default_shipment_columns()]
+    if normalize_column_name(carrier_key) == "dachser":
+        from dachser_customization import dachser_shipment_columns
+
+        columns = dachser_shipment_columns()
     else:
-        columns = _default_shipment_columns()
+        customization = get_carrier_customization(carrier_key)
+        if customization and customization.shipment_columns:
+            columns = list(customization.shipment_columns)
+        elif customization and customization.prepend_transport_mode:
+            columns = ["Transport Mode", *_default_shipment_columns()]
+        else:
+            columns = _default_shipment_columns()
 
     excluded = _excluded_shipment_column_names(carrier_key)
     return [col for col in columns if normalize_column_name(col) not in excluded]
@@ -184,7 +164,12 @@ def get_display_name_overrides(carrier_key: str) -> list[tuple[str, str]]:
 
 def get_standard_display_names(carrier_key: str) -> set[str]:
     """Standard cost labels — never green-highlighted (common + carrier-specific)."""
-    return {display for _, display in get_display_name_overrides(carrier_key)}
+    names = {display for _, display in get_display_name_overrides(carrier_key)}
+    if normalize_column_name(carrier_key) == "dachser":
+        from dachser_customization import dachser_destination_display_names
+
+        names |= dachser_destination_display_names()
+    return names
 
 
 # Substrings matched against normalized column names (excluded from final output).
@@ -197,7 +182,8 @@ def get_skip_rate_columns(carrier_key: str) -> set[str]:
     if customization and customization.skip_rate_columns:
         base = base | {normalize_column_name(c) for c in customization.skip_rate_columns}
     return base
-    
+
+
 def is_excluded_rate_column(column: str, carrier_key: str = "default") -> bool:
     norm = normalize_column_name(column)
     if any(pattern in norm for pattern in GLOBAL_RATE_COLUMN_SUBSTRING_SKIP):
@@ -210,9 +196,19 @@ def apply_display_name_override(
     columns: list[str],
     carrier_key: str,
 ) -> str:
+    normalized_name = normalize_column_name(name)
+    for token in ("pss", "pps"):
+        if (
+            normalized_name == token
+            or normalized_name.endswith(f" {token}")
+            or any(token in normalize_column_name(column) for column in columns)
+        ):
+            for key, display_name in get_display_name_overrides(carrier_key):
+                if key == token:
+                    return display_name
+
     haystack = " ".join(
-        [normalize_column_name(name)]
-        + [normalize_column_name(column) for column in columns]
+        [normalized_name] + [normalize_column_name(column) for column in columns]
     )
     for key, display_name in get_display_name_overrides(carrier_key):
         if all(word in haystack for word in key.split()):
@@ -269,6 +265,12 @@ def apply_shipment_customization(df: pd.DataFrame, carrier_key: str) -> pd.DataF
                 result[column] = value(result)
             else:
                 result[column] = value
+
+    if normalize_column_name(carrier_key) == "dachser":
+        from dachser_customization import apply_dachser_transformations
+
+        result = apply_dachser_transformations(result)
+        shipment_cols = get_shipment_columns(carrier_key)
 
     rate_cols = [col for col in result.columns if col not in shipment_cols]
     available_shipment = [col for col in shipment_cols if col in result.columns]
