@@ -24,6 +24,7 @@ SHIPMENT_COLUMN_WIDTHS = {
     "Lane Id": 12,
     "Origin Region": 14,
     "Origin Country": 10,
+    "VAT": 12,
     "Origin City": 16,
     "Origin Zip Code": 12,
     "Origin State": 10,
@@ -48,6 +49,8 @@ RATE_SUBCOLUMN_WIDTHS = {
 }
 
 GREEN_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+GREY_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
 BLOCK_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
 
@@ -56,7 +59,7 @@ FONT_NORMAL = Font(bold=False)
 ALIGN_WRAP = Alignment(wrap_text=True, vertical="center", horizontal="center")
 ALIGN_LEFT_WRAP = Alignment(wrap_text=True, vertical="center", horizontal="left")
 
-CostSpan = tuple[str, int, int, list[tuple[str, str | None]]]
+CostSpan = tuple[str, int, int, list[tuple[str, str | None]], bool]
 
 
 def is_standard_cost_name(name: str, standard_display_names: set[str]) -> bool:
@@ -70,6 +73,8 @@ def format_rates_workbook(
     data_start_row: int,
     data_row_count: int,
     standard_display_names: set[str] | None = None,
+    highlight_empty_carrier_name: bool = False,
+    carrier_name_col: int | None = None,
 ) -> None:
     if standard_display_names is None:
         from customization_per_carrier import get_standard_display_names
@@ -81,8 +86,29 @@ def format_rates_workbook(
     _apply_rate_highlights(
         ws, cost_spans, data_start_row, data_row_count, standard_display_names
     )
+    if highlight_empty_carrier_name and carrier_name_col is not None:
+        _apply_empty_carrier_highlight(
+            ws,
+            carrier_name_col,
+            data_start_row,
+            data_row_count,
+        )
     _apply_column_widths(ws, shipment_columns, cost_spans)
     _apply_row_heights(ws, data_start_row, data_row_count)
+
+
+def _apply_empty_carrier_highlight(
+    ws,
+    carrier_name_col: int,
+    data_start_row: int,
+    data_row_count: int,
+) -> None:
+    last_row = data_start_row + max(data_row_count - 1, 0)
+    for row_idx in range(data_start_row, last_row + 1):
+        cell = ws.cell(row=row_idx, column=carrier_name_col)
+        value = cell.value
+        if value is None or str(value).strip() == "":
+            cell.fill = YELLOW_FILL
 
 
 def _apply_rate_highlights(
@@ -92,15 +118,24 @@ def _apply_rate_highlights(
     data_row_count: int,
     standard_display_names: set[str],
 ) -> None:
-    """Green fill on cost name row and data values for non-standard costs."""
+    """Grey fill for all-zero costs; green fill for other non-standard costs."""
     last_row = data_start_row + max(data_row_count - 1, 0)
-    for cost_name, start_col, end_col, _sub_columns in cost_spans:
-        if is_standard_cost_name(cost_name, standard_display_names):
+    for cost_name, start_col, end_col, _sub_columns, is_all_zero in cost_spans:
+        if is_all_zero:
+            fill = GREY_FILL
+            highlight_rows = [
+                *range(2, HEADER_ROWS + 1),
+                *range(data_start_row, last_row + 1),
+            ]
+        elif is_standard_cost_name(cost_name, standard_display_names):
             continue
-        highlight_rows = [2, *range(data_start_row, last_row + 1)]
+        else:
+            fill = GREEN_FILL
+            highlight_rows = [2, *range(data_start_row, last_row + 1)]
+
         for row_idx in highlight_rows:
             for col_idx in range(start_col, end_col + 1):
-                ws.cell(row=row_idx, column=col_idx).fill = GREEN_FILL
+                ws.cell(row=row_idx, column=col_idx).fill = fill
 
 
 def _apply_header_styles(
@@ -122,7 +157,7 @@ def _apply_header_styles(
                 cell.fill = BLOCK_FILL
             cell.alignment = ALIGN_LEFT_WRAP if row_idx in (3, 4) else ALIGN_WRAP
 
-    for _cost_name, start_col, end_col, _sub_columns in cost_spans:
+    for _cost_name, start_col, end_col, _sub_columns, _is_all_zero in cost_spans:
         for row_idx in range(2, HEADER_ROWS + 1):
             for col_idx in range(start_col, end_col + 1):
                 cell = ws.cell(row=row_idx, column=col_idx)
@@ -153,7 +188,7 @@ def _apply_column_widths(
         letter = get_column_letter(col_idx)
         ws.column_dimensions[letter].width = SHIPMENT_COLUMN_WIDTHS.get(name, 14)
 
-    for cost_name, start_col, end_col, sub_columns in cost_spans:
+    for cost_name, start_col, end_col, sub_columns, _is_all_zero in cost_spans:
         for offset, (header, min_label) in enumerate(sub_columns):
             col_idx = start_col + offset
             letter = get_column_letter(col_idx)
