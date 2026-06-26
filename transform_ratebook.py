@@ -56,25 +56,60 @@ def format_ratebook_date(value) -> str:
     return pd.to_datetime(value, dayfirst=True).strftime("%d.%m.%Y")
 
 
+def find_revision_sheet_name(xlsx_path: Path) -> str:
+    sheet_names = pd.ExcelFile(xlsx_path).sheet_names
+    normalized = {normalize_column_name(name): name for name in sheet_names}
+    direct_candidates = ("revision", "revisions")
+    for candidate in direct_candidates:
+        if candidate in normalized:
+            return normalized[candidate]
+
+    for normalized_name, original_name in normalized.items():
+        if "revision" in normalized_name:
+            return original_name
+
+    raise ValueError(
+        "Could not find a Revision sheet. Available sheets: "
+        + ", ".join(sheet_names)
+    )
+
+
 def read_revision_dates(xlsx_path: Path) -> tuple[str, str]:
-    revision_raw = pd.read_excel(xlsx_path, sheet_name="Revision", header=None)
+    revision_sheet = find_revision_sheet_name(xlsx_path)
+    revision_raw = pd.read_excel(xlsx_path, sheet_name=revision_sheet, header=None)
     valid_to = None
+    until_markers = {
+        "until",
+        "valid to",
+        "valid until",
+        "expiry date",
+        "expiration date",
+    }
     for _, row in revision_raw.iterrows():
         for idx, cell in enumerate(row):
-            if str(cell).strip().lower() == "until:":
+            label = str(cell).strip().lower().rstrip(":")
+            if label in until_markers:
                 valid_to = row.iloc[idx + 1]
                 break
         if valid_to is not None:
             break
-    if valid_to is None or pd.isna(valid_to):
-        raise ValueError("Could not find 'until:' date on Revision tab.")
 
-    revision_table = pd.read_excel(xlsx_path, sheet_name="Revision", header=4)
+    header_row = 0
+    for idx, row in revision_raw.iterrows():
+        normalized_cells = {normalize_column_name(cell) for cell in row.tolist()}
+        if "effective date" in normalized_cells:
+            header_row = idx
+            break
+
+    revision_table = pd.read_excel(xlsx_path, sheet_name=revision_sheet, header=header_row)
     effective_col = find_column(revision_table, "Effective date")
     effective_dates = revision_table[effective_col].dropna()
     if effective_dates.empty:
         raise ValueError("No Effective date values found on Revision tab.")
     valid_from = effective_dates.iloc[-1]
+    if valid_to is None or pd.isna(valid_to):
+        # Some carriers provide a revision log without an explicit "until" label.
+        valid_to = effective_dates.max()
 
     return format_ratebook_date(valid_from), format_ratebook_date(valid_to)
 
