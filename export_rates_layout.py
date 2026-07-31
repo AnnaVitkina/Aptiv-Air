@@ -20,9 +20,11 @@ from customization_per_carrier import (
 )
 from format_rates_layout import format_rates_workbook
 from config import OUTPUT_DIR
+from excel_postal_codes import postal_code_as_text
 from transform_ratebook import FRONT_COLUMN_ORDER, normalize_column_name
 
 HEADER_ROWS = 6
+POSTAL_SHIPMENT_COLUMNS = {"Origin Zip Code", "Destination Zip Code"}
 BLOCK_ORIGIN = "Origin Charges"
 BLOCK_MAIN = "Main freight Charges"
 BLOCK_DEST = "Destination charges"
@@ -383,6 +385,15 @@ def excel_cell_value(value):
     return value
 
 
+def write_shipment_cell(ws, row: int, column: int, column_name: str, value) -> None:
+    cell = ws.cell(row=row, column=column)
+    if column_name in POSTAL_SHIPMENT_COLUMNS and value is not None and not pd.isna(value):
+        cell.value = postal_code_as_text(value)
+        cell.number_format = "@"
+        return
+    cell.value = excel_cell_value(value)
+
+
 def export_rates_layout_xlsx(
     df: pd.DataFrame,
     source_path: Path,
@@ -442,10 +453,12 @@ def export_rates_layout_xlsx(
     for row_offset, row_idx in enumerate(df.index):
         excel_row = data_start_row + row_offset
         for col_idx, column in enumerate(shipment_columns, start=1):
-            ws.cell(
-                row=excel_row,
-                column=col_idx,
-                value=excel_cell_value(df.at[row_idx, column]),
+            write_shipment_cell(
+                ws,
+                excel_row,
+                col_idx,
+                column,
+                df.at[row_idx, column],
             )
 
         for cost, start_col, _end_col in cost_spans:
