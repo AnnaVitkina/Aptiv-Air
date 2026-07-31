@@ -51,6 +51,7 @@ RATE_SUBCOLUMN_WIDTHS = {
 GREEN_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
 GREY_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+PEAK_SEASON_FILL = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
 HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
 BLOCK_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
 
@@ -118,10 +119,16 @@ def _apply_rate_highlights(
     data_row_count: int,
     standard_display_names: set[str],
 ) -> None:
-    """Grey fill for all-zero costs; green fill for other non-standard costs."""
+    """Grey fill for all-zero costs; orange for Peak Season; green for other non-standard."""
     last_row = data_start_row + max(data_row_count - 1, 0)
     for cost_name, start_col, end_col, _sub_columns, is_all_zero in cost_spans:
-        if is_all_zero:
+        if cost_name == "Peak Season Surcharge":
+            fill = PEAK_SEASON_FILL
+            highlight_rows = [
+                *range(2, HEADER_ROWS + 1),
+                *range(data_start_row, last_row + 1),
+            ]
+        elif is_all_zero:
             fill = GREY_FILL
             highlight_rows = [
                 *range(2, HEADER_ROWS + 1),
