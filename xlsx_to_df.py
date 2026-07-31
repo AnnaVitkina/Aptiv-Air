@@ -1,7 +1,5 @@
 """Load a chosen Excel tab from input/ into a pandas DataFrame."""
 
-from pathlib import Path
-
 import os
 import sys
 
@@ -15,10 +13,12 @@ except NameError:
 if _proj_dir not in sys.path:
     sys.path.insert(0, _proj_dir)
 
+from pathlib import Path
 
 import pandas as pd
 
 from config import INPUT_DIR
+from excel_postal_codes import patch_postal_code_columns
 from export_rates_layout import export_rates_layout_xlsx
 from transform_ratebook import save_processed_xlsx, transform_ratebook_df
 
@@ -63,7 +63,8 @@ def choose_sheet(sheet_names: list[str]) -> str:
 
 
 def xlsx_tab_to_df(xlsx_path: Path, sheet_name: str) -> pd.DataFrame:
-    return pd.read_excel(xlsx_path, sheet_name=sheet_name)
+    df = pd.read_excel(xlsx_path, sheet_name=sheet_name)
+    return patch_postal_code_columns(df, xlsx_path, sheet_name)
 
 
 def find_lane_id_column(df: pd.DataFrame) -> str | None:
