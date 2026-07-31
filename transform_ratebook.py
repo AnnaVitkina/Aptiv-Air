@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from config import PROCESSING_DIR
+from excel_postal_codes import postal_code_as_text
 from customization_per_carrier import (
     apply_shipment_customization,
     detect_carrier_key,
@@ -157,7 +158,7 @@ def transform_ratebook_df(df: pd.DataFrame, xlsx_path: Path) -> pd.DataFrame:
     front["Origin City"] = df[find_column(df, "Origin City")]
     front["Origin Zip Code"] = df[
         find_column(df, "Origin Postal Code", "Origin postal code")
-    ]
+    ].map(postal_code_as_text)
     front["Origin State"] = df[find_column(df, "Origin State")]
     front["Origin Airport"] = df[
         find_column(df, "Proposed Origin Airport", "Proposed origin airport")
@@ -169,7 +170,7 @@ def transform_ratebook_df(df: pd.DataFrame, xlsx_path: Path) -> pd.DataFrame:
     front["Destination City"] = df[find_column(df, "Destination City", "Destination city")]
     front["Destination Zip Code"] = df[
         find_column(df, "Destination Postal Code", "Destination postal code")
-    ]
+    ].map(postal_code_as_text)
     front["Destination State"] = df[find_column(df, "Destination State", "destination state")]
     front["Destination Airport"] = df[
         find_column(df, "Proposed Destination Airport", "Proposed Destination Airport")
@@ -194,5 +195,9 @@ def save_processed_xlsx(df: pd.DataFrame, source_path: Path, sheet_name: str) ->
     PROCESSING_DIR.mkdir(parents=True, exist_ok=True)
     safe_sheet = re.sub(r'[<>:"/\\|?*]', "_", sheet_name)
     output_path = PROCESSING_DIR / f"{source_path.stem}_{safe_sheet}_processed.xlsx"
-    df.to_excel(output_path, index=False, sheet_name=safe_sheet[:31])
+    export_df = df.copy()
+    for column in ("Origin Zip Code", "Destination Zip Code"):
+        if column in export_df.columns:
+            export_df[column] = export_df[column].map(postal_code_as_text)
+    export_df.to_excel(output_path, index=False, sheet_name=safe_sheet[:31])
     return output_path
