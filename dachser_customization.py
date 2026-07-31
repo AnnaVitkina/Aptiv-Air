@@ -41,6 +41,14 @@ DACHSER_CARRIER_NAME_BY_DESTINATION: dict[str, str] = {
     "PT": "Dachser PT",
 }
 
+# Origin-destination route -> Carrier Name (when destination alone is unmapped).
+DACHSER_CARRIER_NAME_BY_ROUTE: dict[tuple[str, str], str] = {
+    ("DE", "KR"): "Dachser DE",
+    ("DE", "CN"): "Dachser DE",
+    ("DE", "TN"): "Dachser DE",
+    ("DE", "US"): "Dachser DE",
+}
+
 DACHSER_VAT_CARRIER_COUNTRY: dict[str, str] = {
     "Dachser DE": "DE",
     "Dachser AT (PN1)": "AT",
@@ -92,8 +100,26 @@ def dachser_shipment_columns() -> list[str]:
 
 
 def dachser_carrier_name(df: pd.DataFrame) -> pd.Series:
+    origin = df["Origin Country"].astype(str).str.strip().str.upper()
     dest = df["Destination Country"].astype(str).str.strip().str.upper()
-    return dest.map(DACHSER_CARRIER_NAME_BY_DESTINATION)
+    route_keys = list(zip(origin.tolist(), dest.tolist()))
+    route_mapped = pd.Series(
+        [DACHSER_CARRIER_NAME_BY_ROUTE.get(key) for key in route_keys],
+        index=df.index,
+    )
+    dest_mapped = dest.map(DACHSER_CARRIER_NAME_BY_DESTINATION)
+    return route_mapped.fillna(dest_mapped)
+
+
+def fill_empty_origin_region(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    if "Origin Region" not in result.columns:
+        return result
+    empty = result["Origin Region"].isna() | (
+        result["Origin Region"].astype(str).str.strip() == ""
+    )
+    result.loc[empty, "Origin Region"] = "NA"
+    return result
 
 
 def _destination_source_columns(df: pd.DataFrame) -> list[str]:
@@ -269,6 +295,7 @@ def expand_dachser_destination_columns(df: pd.DataFrame) -> pd.DataFrame:
     variants_by_base = _variants_by_display_base()
     dest_structures: dict[str, list[RateSubColumn]] = {}
     dest_rate_by: dict[str, str] = {}
+    expanded_columns: dict[str, pd.Series] = {}
 
     for _pattern, display_base in DACHSER_DESTINATION_CHARGE_PATTERNS:
         source_group = find_destination_source_group(result, _pattern, display_base)
@@ -289,12 +316,19 @@ def expand_dachser_destination_columns(df: pd.DataFrame) -> pd.DataFrame:
             mask = _variant_fill_mask(result, variant)
             for sub_idx, source_col in enumerate(source_rate_cols):
                 exp_col = _expanded_column_name(display_base, variant.suffix, sub_idx)
-                if exp_col not in result.columns:
-                    result[exp_col] = pd.NA
+                if exp_col not in expanded_columns:
+                    expanded_columns[exp_col] = pd.Series(pd.NA, index=result.index)
                 if mask.any():
-                    result.loc[mask, exp_col] = result.loc[mask, source_col]
+                    expanded_columns[exp_col] = expanded_columns[exp_col].copy()
+                    expanded_columns[exp_col].loc[mask] = result.loc[mask, source_col]
 
         result = result.drop(columns=source_group)
+
+    if expanded_columns:
+        result = pd.concat(
+            [result, pd.DataFrame(expanded_columns, index=result.index)],
+            axis=1,
+        )
 
     result.attrs["dachser_dest_structures"] = dest_structures
     result.attrs["dachser_dest_rate_by"] = dest_rate_by
@@ -310,6 +344,7 @@ def expand_dachser_rows(df: pd.DataFrame) -> pd.DataFrame:
     duplicates["VAT"] = duplicates["Carrier Name"].map(
         {name: f"VAT_{cc}" for name, cc in DACHSER_VAT_CARRIER_COUNTRY.items()}
     )
+    duplicates["Origin Country"] = duplicates["Destination Country"]
 
     return pd.concat([result, duplicates], ignore_index=True)
 
@@ -333,10 +368,28 @@ def clear_non_destination_rates_on_vat_rows(df: pd.DataFrame) -> pd.DataFrame:
 def apply_dachser_transformations(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
     result["Carrier Name"] = dachser_carrier_name(result)
+    result = fill_empty_origin_region(result)
     result = expand_dachser_rows(result)
     result = expand_dachser_destination_columns(result)
     result = clear_non_destination_rates_on_vat_rows(result)
     return result
+
+
+def _is_fsc_cost(cost: RateCost) -> bool:
+    if "fsc" in normalize_column_name(cost.name):
+        return True
+    return any(
+        sub.source_column and "fsc" in normalize_column_name(sub.source_column)
+        for sub in cost.sub_columns
+    )
+
+
+def _should_keep_origin_main_cost(cost: RateCost, df: pd.DataFrame) -> bool:
+    from export_rates_layout import cost_has_nonzero_values
+
+    if _is_fsc_cost(cost):
+        return cost_has_nonzero_values(df, cost)
+    return True
 
 
 def _is_dachser_destination_column(column: str) -> bool:
@@ -409,7 +462,10 @@ def build_dachser_rate_cost_groups(df: pd.DataFrame, carrier_key: str) -> list[R
         if block != BLOCK_DEST:
             ordered_origin_main.extend(by_block[block])
 
-    return ordered_origin_main + destination_costs
+    kept_origin_main = [
+        cost for cost in ordered_origin_main if _should_keep_origin_main_cost(cost, df)
+    ]
+    return kept_origin_main + destination_costs
 
 
 def dachser_destination_display_names() -> set[str]:
