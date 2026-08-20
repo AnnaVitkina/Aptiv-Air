@@ -167,22 +167,13 @@ def build_sub_columns(source_columns: list[str]) -> list[RateSubColumn]:
     sub_columns = [RateSubColumn(header="Currency", is_currency=True)]
     for source in source_columns:
         if is_min_column(source):
-            if has_weight_brackets:
-                sub_columns.append(
-                    RateSubColumn(
-                        header="p/unit",
-                        source_column=source,
-                        min_max_label="MIN",
-                    )
+            sub_columns.append(
+                RateSubColumn(
+                    header="Flat",
+                    source_column=source,
+                    min_max_label="MIN",
                 )
-            else:
-                sub_columns.append(
-                    RateSubColumn(
-                        header="Flat",
-                        source_column=source,
-                        min_max_label="MIN",
-                    )
-                )
+            )
         elif is_max_column(source):
             sub_columns.append(
                 RateSubColumn(
