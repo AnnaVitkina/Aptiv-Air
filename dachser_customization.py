@@ -111,17 +111,6 @@ def dachser_carrier_name(df: pd.DataFrame) -> pd.Series:
     return route_mapped.fillna(dest_mapped)
 
 
-def fill_empty_origin_region(df: pd.DataFrame) -> pd.DataFrame:
-    result = df.copy()
-    if "Origin Region" not in result.columns:
-        return result
-    empty = result["Origin Region"].isna() | (
-        result["Origin Region"].astype(str).str.strip() == ""
-    )
-    result.loc[empty, "Origin Region"] = "NA"
-    return result
-
-
 def _destination_source_columns(df: pd.DataFrame) -> list[str]:
     shipment_names = {
         normalize_column_name(name) for name in get_shipment_columns("dachser")
@@ -368,7 +357,6 @@ def clear_non_destination_rates_on_vat_rows(df: pd.DataFrame) -> pd.DataFrame:
 def apply_dachser_transformations(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
     result["Carrier Name"] = dachser_carrier_name(result)
-    result = fill_empty_origin_region(result)
     result = expand_dachser_rows(result)
     result = expand_dachser_destination_columns(result)
     result = clear_non_destination_rates_on_vat_rows(result)
