@@ -53,6 +53,13 @@ def paying_region_from_lane_id(series: pd.Series) -> pd.Series:
     return series.astype(str).str.extract(r"^([A-Za-z]+)", expand=False)
 
 
+def region_with_na_fallback(series: pd.Series) -> pd.Series:
+    empty = series.isna() | (series.astype(str).str.strip() == "")
+    result = series.astype(object).copy()
+    result.loc[empty] = "NA"
+    return result
+
+
 def format_ratebook_date(value) -> str:
     return pd.to_datetime(value, dayfirst=True).strftime("%d.%m.%Y")
 
@@ -153,7 +160,9 @@ def transform_ratebook_df(df: pd.DataFrame, xlsx_path: Path) -> pd.DataFrame:
     front = pd.DataFrame(index=df.index)
     front["Paying Region"] = paying_region_from_lane_id(df[lane_col])
     front["Lane Id"] = df[lane_col]
-    front["Origin Region"] = df[find_column(df, "Origin Region")]
+    front["Origin Region"] = region_with_na_fallback(
+        df[find_column(df, "Origin Region")]
+    )
     front["Origin Country"] = df[find_column(df, "Origin Country code", "Origin country code")]
     front["Origin City"] = df[find_column(df, "Origin City")]
     front["Origin Zip Code"] = df[
@@ -163,7 +172,9 @@ def transform_ratebook_df(df: pd.DataFrame, xlsx_path: Path) -> pd.DataFrame:
     front["Origin Airport"] = df[
         find_column(df, "Proposed Origin Airport", "Proposed origin airport")
     ]
-    front["Destination Region"] = df[find_column(df, "Destination Region")]
+    front["Destination Region"] = region_with_na_fallback(
+        df[find_column(df, "Destination Region")]
+    )
     front["Destination Country"] = df[
         find_column(df, "Destination Country Code", "destination country code")
     ]
